@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LPG Sentinel - Smart Gas Telemetry & Predictive Refill Engine</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Chart.js for real-time telemetry and consumption analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  
+  <!-- Firebase Cloud SDK (Compat for seamless integration) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-database-compat.js"></script>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            sentinel: {
+              950: '#060a12',
+              900: '#0c1424',
+              850: '#111b32',
+              800: '#172442',
+              700: '#223663',
+              cyan: '#06b6d4',
+              flame: '#f97316',
+              danger: '#ef4444',
+              safe: '#10b981'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Translucent liquid animation & glow */
+    .glass-card {
+      background: rgba(12, 20, 36, 0.75);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+    .liquid-wave {
+      transition: height 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), y 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 0.3; transform: scale(1); }
+      50% { opacity: 0.8; transform: scale(1.08); }
+    }
+    .hazard-pulse {
+      animation: pulseGlow 1.4s infinite ease-in-out;
+    }
+    /* Custom clean scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #060a12; }
+    ::-webkit-scrollbar-thumb { background: #223663; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-sentinel-950 text-slate-100 min-h-screen font-sans flex flex-col antialiased selection:bg-cyan-500 selection:text-black">
+
+  <!-- TOP APP HEADER & CONNECTION BAR -->
+  <header class="border-b border-slate-800/80 bg-sentinel-900/90 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        
+        <!-- Logo & Title -->
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/25 ring-1 ring-cyan-400/40">
+            <i class="fa-solid fa-fire-flame-curved text-white text-lg"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1 class="text-base sm:text-lg font-extrabold tracking-tight text-white">
+                SMART-LPG-CONSUMPTION MANAGEMENT <span class="text-cyan-400 font-mono font-normal text-xs px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-800/80">v2.4 IoT</span>
+              </h1>
+              <span id="hardwareModeBadge" class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-medium">
+                <i class="fa-solid fa-vial mr-1"></i>DTAI PROJECT 
+              </span>
+            </div>
+            <p class="text-xs text-slate-400">Real-Time Weight Telemetry & Predictive Refill Engine</p>
+          </div>
+        </div>
+
+        <!-- Connection Controls & Status Pills -->
+        <div class="flex flex-wrap items-center gap-2 sm:gap-3 text-xs">
+          
+          <!-- WebSocket URL & Connect form -->
+          <div class="flex items-center bg-sentinel-950/80 border border-slate-800 rounded-lg px-2 py-1 focus-within:border-cyan-500 transition">
+            <span class="text-slate-500 font-mono text-[11px] mr-1 hidden sm:inline">☁️</span>
+            <input id="wsUrlInput" type="text" value="firebase-cloud" 
+              class="bg-transparent text-slate-200 font-mono text-xs focus:outline-none w-36 sm:w-48 placeholder-slate-600"
+              placeholder="Cloud Connection Mode">
+            <button id="wsConnectBtn" class="ml-1 bg-cyan-600 hover:bg-cyan-500 text-white font-medium px-2.5 py-1 rounded text-[11px] transition">
+              Connect
+            </button>
+          </div>
+
+          <!-- Ping / Latency Indicator -->
+          <div class="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 font-mono text-[11px] text-slate-300">
+            <i class="fa-solid fa-bolt text-amber-400"></i>
+            <span id="latencyDisplay">~12 ms</span>
+          </div>
+
+          <!-- WiFi Signal RSSI -->
+          <div class="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 font-mono text-[11px] text-slate-300" title="ESP32 WiFi Strength">
+            <i class="fa-solid fa-wifi text-emerald-400" id="wifiRssiIcon"></i>
+            <span id="wifiRssiVal">-62 dBm</span>
+          </div>
+
+          <!-- Hardware Code Snippet Modal Button -->
+          <button id="openEspCodeModalBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium px-2.5 py-1.5 rounded-lg transition flex items-center gap-1.5" title="Get ESP32 C++ Code">
+            <i class="fa-solid fa-microchip text-cyan-400"></i>
+            <span class="hidden sm:inline">ESP32 Code</span>
+          </button>
+
+          <!-- Calibration & Settings Drawer Toggle -->
+          <button id="toggleSettingsBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium px-2.5 py-1.5 rounded-lg transition flex items-center gap-1.5">
+            <i class="fa-solid fa-sliders text-cyan-400"></i>
+            <span>Calibration</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- CRITICAL GAS LEAK WARNING BANNER -->
+  <div id="leakAlarmBanner" class="hidden bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white px-4 py-2.5 shadow-2xl relative z-30 transition-all border-b border-red-500">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div class="flex items-center space-x-3">
+        <span class="p-2 bg-black/25 rounded-lg">
+          <i class="fa-solid fa-triangle-exclamation text-xl animate-bounce text-yellow-300"></i>
+        </span>
+        <div>
+          <h2 class="font-extrabold text-sm sm:text-base tracking-wide uppercase flex items-center gap-2">
+            CRITICAL LEAKAGE DETECTED (MQ SENSOR ALERT)
+            <span class="text-xs px-2 py-0.5 rounded bg-black/40 text-red-200 font-mono">&gt; 350 PPM</span>
+          </h2>
+          <p class="text-xs text-red-100">Gas concentration dangerous. Shut off regulator valve and ventilate the room immediately.</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="muteAudioBuzzerBtn" class="bg-black/40 hover:bg-black/60 border border-white/20 px-3 py-1.5 rounded text-xs font-semibold whitespace-nowrap transition flex items-center gap-1">
+          <i class="fa-solid fa-volume-xmark"></i> Mute Alarm
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- COLLAPSIBLE HARDWARE CALIBRATION & TARE DRAWER -->
+  <div id="settingsDrawer" class="hidden bg-sentinel-900 border-b border-slate-800 px-4 sm:px-6 lg:px-8 py-5 transition-all">
+    <div class="max-w-7xl mx-auto">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-scale-balanced text-cyan-400"></i>
+          Physical Load Cell Calibration & Cylinder Tare Settings
+        </h3>
+        <button id="closeSettingsBtn" class="text-slate-400 hover:text-white text-xs">
+          <i class="fa-solid fa-xmark text-sm"></i>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-mono">
+        <!-- Input 1: Empty Tare Weight -->
+        <div class="bg-sentinel-950 p-3 rounded-xl border border-slate-800">
+          <label class="block text-slate-400 mb-1">Cylinder Tare Weight (Empty):</label>
+          <div class="flex items-center gap-2">
+            <input id="tareWeightInput" type="number" step="0.1" value="15.3" class="bg-sentinel-900 text-white border border-slate-700 px-2.5 py-1.5 rounded w-full focus:outline-none focus:border-cyan-500 font-bold">
+            <span class="text-slate-400 font-sans">kg</span>
+          </div>
+          <span class="text-[10px] text-slate-500 mt-1 block">Standard domestic (HP/Indane) ~15.3 kg</span>
+        </div>
+
+        <!-- Input 2: Full LPG Gas Capacity -->
+        <div class="bg-sentinel-950 p-3 rounded-xl border border-slate-800">
+          <label class="block text-slate-400 mb-1">Nominal Net LPG Capacity:</label>
+          <div class="flex items-center gap-2">
+            <input id="nominalCapacityInput" type="number" step="0.1" value="14.2" class="bg-sentinel-900 text-white border border-slate-700 px-2.5 py-1.5 rounded w-full focus:outline-none focus:border-cyan-500 font-bold">
+            <span class="text-slate-400 font-sans">kg</span>
+          </div>
+          <span class="text-[10px] text-slate-500 mt-1 block">Full tank net fuel volume</span>
+        </div>
+
+        <!-- Input 3: HX711 Calibration Factor -->
+        <div class="bg-sentinel-950 p-3 rounded-xl border border-slate-800">
+          <label class="block text-slate-400 mb-1">HX711 Calibration Factor:</label>
+          <div class="flex items-center gap-2">
+            <input id="calibFactorInput" type="number" value="-22800" class="bg-sentinel-900 text-white border border-slate-700 px-2.5 py-1.5 rounded w-full focus:outline-none focus:border-cyan-500 font-bold">
+            <button id="applyCalibBtn" class="bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1.5 rounded transition">Set</button>
+          </div>
+          <span class="text-[10px] text-slate-500 mt-1 block">Load cell analog-to-kg divisor</span>
+        </div>
+
+        <!-- Input 4: Gas Leak Alert Threshold -->
+        <div class="bg-sentinel-950 p-3 rounded-xl border border-slate-800">
+          <label class="block text-slate-400 mb-1">MQ Leak Threshold (PPM):</label>
+          <div class="flex items-center gap-2">
+            <input id="leakThresholdInput" type="number" value="350" class="bg-sentinel-900 text-white border border-slate-700 px-2.5 py-1.5 rounded w-full focus:outline-none focus:border-cyan-500 font-bold">
+            <button id="saveSettingsBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1.5 rounded transition">Apply</button>
+          </div>
+          <span class="text-[10px] text-slate-500 mt-1 block">Threshold for audible alarm</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN DASHBOARD CONTENT -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full space-y-6">
+
+    <!-- 4 CORE TELEMETRY METRIC CARDS -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      
+      <!-- Card 1: Real Net LPG Remaining -->
+      <div class="glass-card rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs uppercase tracking-wider font-semibold text-slate-400">Current Gas Level</span>
+          <span id="levelHealthBadge" class="text-xs px-2.5 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+            Normal Level
+          </span>
+        </div>
+        <div class="my-4 flex items-baseline justify-between">
+          <div>
+            <div class="flex items-baseline gap-1.5">
+              <span id="cardNetKg" class="text-4xl font-extrabold text-white font-mono tracking-tight">11.85</span>
+              <span class="text-slate-400 text-base font-semibold">kg</span>
+            </div>
+            <div class="text-xs text-slate-400 mt-1 flex items-center gap-1">
+              <span id="midnightDelta" class="text-emerald-400 font-mono">-0.32 kg</span>
+              <span>since midnight</span>
+            </div>
+          </div>
+          <!-- Gauge Radial Percentage -->
+          <div class="relative w-14 h-14 flex items-center justify-center">
+            <svg class="w-full h-full -rotate-90" viewBox="0 0 36 36">
+              <path class="text-slate-800" stroke-width="3.5" stroke="currentColor" fill="none"
+                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+              <path id="circleProgressPath" class="text-cyan-400 transition-all duration-700 ease-out" stroke-dasharray="83.5, 100" stroke-width="3.5" stroke-linecap="round" stroke="currentColor" fill="none"
+                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+            </svg>
+            <span id="radialPercentText" class="absolute text-[11px] font-mono font-bold text-white">83%</span>
+          </div>
+        </div>
+        <div class="flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-3">
+          <span>Gross Scale: <span id="cardGrossKg" class="font-mono text-slate-200">27.15 kg</span></span>
+          <span class="text-cyan-400 font-mono" id="cardPercentVal">83.5% Full</span>
+        </div>
+      </div>
+
+      <!-- Card 2: Refill Forecast (Days Left) -->
+      <div class="glass-card rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs uppercase tracking-wider font-semibold text-slate-400">Refill Forecast</span>
+          <div class="w-7 h-7 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400">
+            <i class="fa-solid fa-calendar-day text-xs"></i>
+          </div>
+        </div>
+        <div class="my-4">
+          <div class="flex items-baseline gap-2">
+            <span id="cardDaysRemaining" class="text-4xl font-extrabold text-cyan-400 font-mono tracking-tight">28</span>
+            <span class="text-slate-400 text-base font-semibold">Days left</span>
+          </div>
+          <p id="refillRecommendation" class="text-xs text-slate-400 mt-1">Sufficient reserve for ~4 weeks</p>
+        </div>
+        <div class="flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-3">
+          <span>Target Booking:</span>
+          <span id="cardRefillDate" class="font-mono text-slate-200 font-semibold">05 Dec 2026</span>
+        </div>
+      </div>
+
+      <!-- Card 3: Avg Daily Consumption -->
+      <div class="glass-card rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs uppercase tracking-wider font-semibold text-slate-400">Burn Rate (7-Day Avg)</span>
+          <div class="w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400">
+            <i class="fa-solid fa-chart-line text-xs"></i>
+          </div>
+        </div>
+        <div class="my-4">
+          <div class="flex items-baseline gap-2">
+            <span id="cardBurnRate" class="text-4xl font-extrabold text-white font-mono tracking-tight">0.42</span>
+            <span class="text-slate-400 text-base font-semibold">kg / day</span>
+          </div>
+          <p class="text-xs text-emerald-400 mt-1 flex items-center gap-1 font-mono">
+            <i class="fa-solid fa-arrow-trend-down text-[10px]"></i> -4.2% vs last week
+          </p>
+        </div>
+        <div class="flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-3">
+          <span>Peak Burn Slot:</span>
+          <span class="font-mono text-slate-200">19:30 - 21:00</span>
+        </div>
+      </div>
+
+      <!-- Card 4: Gas Leak / Safety MQ Sensor -->
+      <div class="glass-card rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between" id="cardMqSafety">
+        <div class="flex items-center justify-between">
+          <span class="text-xs uppercase tracking-wider font-semibold text-slate-400">Gas Leak Safety (MQ-5)</span>
+          <span id="cardMqBadge" class="text-xs px-2.5 py-0.5 rounded-full font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+            SAFE
+          </span>
+        </div>
+        <div class="my-4">
+          <div class="flex items-baseline gap-2">
+            <span id="cardMqPpm" class="text-4xl font-extrabold text-white font-mono tracking-tight">85</span>
+            <span class="text-slate-400 text-base font-semibold">PPM</span>
+          </div>
+          <div class="w-full bg-slate-800 h-1.5 rounded-full mt-2.5 overflow-hidden">
+            <div id="ppmProgressBar" class="bg-emerald-400 h-full rounded-full transition-all duration-300" style="width: 24%"></div>
+          </div>
+        </div>
+        <div class="flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-3">
+          <span>Alarm Limit: <span id="cardMqAlarmLimit" class="font-mono text-slate-300">350 PPM</span></span>
+          <button id="toggleAudioTestBtn" class="text-[11px] text-cyan-400 hover:text-cyan-300 transition flex items-center gap-1">
+            <i class="fa-solid fa-volume-high"></i> Test Sound
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- MAIN TWO-COLUMN WORKSPACE: CYLINDER VISUALIZER & DUAL CHARTS -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- LEFT COLUMN (5 cols): Physical 3D/SVG Cylinder Cutaway -->
+      <div class="lg:col-span-5 glass-card rounded-2xl p-6 flex flex-col justify-between space-y-6">
+        <div>
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-base font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-gas-pump text-cyan-400"></i> Cylinder Cross-Section
+              </h2>
+              <p class="text-xs text-slate-400">Dynamic dual-phase liquid & vapor model</p>
+            </div>
+            
+            <div class="flex items-center space-x-1.5 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-lg text-xs font-mono text-slate-300">
+              <i class="fa-solid fa-temperature-half text-amber-400"></i>
+              <span>28.4°C Ambient</span>
+            </div>
+          </div>
+
+          <!-- Realistic Cutaway Cylinder Visual Graphic -->
+          <div class="relative py-6 flex flex-col items-center justify-center">
+            
+            <svg width="240" height="320" viewBox="0 0 220 300" class="drop-shadow-2xl">
+              <defs>
+                <!-- Exterior Metal Shading Gradient -->
+                <linearGradient id="metalCylinderShell" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#7f1d1d" />
+                  <stop offset="25%" stop-color="#dc2626" />
+                  <stop offset="60%" stop-color="#b91c1c" />
+                  <stop offset="100%" stop-color="#450a0a" />
+                </linearGradient>
+
+                <!-- Liquid LPG (Pressurized Butane/Propane) Gradient -->
+                <linearGradient id="lpgLiquidGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#06b6d4" />
+                  <stop offset="50%" stop-color="#2563eb" />
+                  <stop offset="100%" stop-color="#0284c7" />
+                </linearGradient>
+
+                <!-- Clip Path for the Cutaway Chamber -->
+                <clipPath id="innerCutawayClip">
+                  <rect x="36" y="65" width="148" height="190" rx="18" ry="18" />
+                </clipPath>
+              </defs>
+
+              <!-- Top Protective Collar / Handle Ring -->
+              <path d="M 65 25 C 65 14, 155 14, 155 25 L 160 50 C 160 55, 60 55, 60 50 Z" fill="#991b1b" stroke="#ef4444" stroke-width="1.8" />
+              <!-- Hand Hold Openings in Ring -->
+              <ellipse cx="85" cy="36" rx="14" ry="5" fill="#060a12" opacity="0.75" />
+              <ellipse cx="135" cy="36" rx="14" ry="5" fill="#060a12" opacity="0.75" />
+
+              <!-- Brass Safety Valve & Pressure Release Nozzle -->
+              <rect x="100" y="30" width="20" height="22" rx="3" fill="#fbbf24" stroke="#b45309" stroke-width="1.5" />
+              <circle cx="110" cy="22" r="8" fill="#d97706" stroke="#78350f" stroke-width="1.2" />
+
+              <!-- Outer Cylinder Metal Body Perimeter Base -->
+              <rect x="30" y="55" width="160" height="210" rx="32" ry="32" fill="url(#metalCylinderShell)" stroke="#f87171" stroke-width="1.5" />
+
+              <!-- INNER CUTAWAY SECTION (Glass Viewing Window) -->
+              <g clip-path="url(#innerCutawayClip)">
+                <!-- Pressurized Gas Vapor Chamber (Upper empty space) -->
+                <rect x="36" y="65" width="148" height="190" fill="#0b1322" />
+                
+                <!-- Atmospheric Gas vapor micro-dots -->
+                <circle cx="70" cy="85" r="1.5" fill="#38bdf8" opacity="0.3" />
+                <circle cx="120" cy="95" r="2" fill="#38bdf8" opacity="0.25" />
+                <circle cx="95" cy="115" r="1.2" fill="#38bdf8" opacity="0.3" />
+
+                <!-- Calibration Capacity Marks (25%, 50%, 75%) -->
+                <line x1="36" y1="207" x2="184" y2="207" stroke="#334155" stroke-dasharray="3,3" stroke-width="1" />
+                <text x="44" y="204" fill="#64748b" font-size="8" font-family="monospace">25% (3.5kg)</text>
+
+                <line x1="36" y1="160" x2="184" y2="160" stroke="#334155" stroke-dasharray="3,3" stroke-width="1" />
+                <text x="44" y="157" fill="#64748b" font-size="8" font-family="monospace">50% (7.1kg)</text>
+
+                <line x1="36" y1="112" x2="184" y2="112" stroke="#334155" stroke-dasharray="3,3" stroke-width="1" />
+                <text x="44" y="109" fill="#64748b" font-size="8" font-family="monospace">75% (10.6kg)</text>
+
+                <!-- Dynamic Translucent LPG Liquid Level -->
+                <!-- Max height is 190. At 100%, y=65, h=190. At 0%, y=255, h=0 -->
+                <rect id="svgLiquidFill" class="liquid-wave" x="36" y="96" width="148" height="159" fill="url(#lpgLiquidGrad)" opacity="0.82" />
+
+                <!-- Surface Reflection Meniscus -->
+                <path id="svgMeniscusLine" d="M 36 96 Q 75 90 110 96 T 184 96" stroke="#bae6fd" stroke-width="2.5" fill="none" opacity="0.75" />
+              </g>
+
+              <!-- Outer Metal Rim Highlight & Border -->
+              <rect x="36" y="65" width="148" height="190" rx="18" ry="18" fill="none" stroke="#fca5a5" stroke-width="2" opacity="0.4" />
+
+              <!-- Bottom Welded Base Ring Stand -->
+              <path d="M 55 265 L 165 265 L 170 285 C 170 290, 50 290, 50 285 Z" fill="#7f1d1d" stroke="#ef4444" stroke-width="1.8" />
+            </svg>
+
+            <!-- Real-time weight badge floating overlay -->
+            <div class="mt-2 text-center bg-sentinel-950/80 border border-slate-800 px-4 py-2 rounded-xl">
+              <span id="svgNetFloatingText" class="text-2xl font-bold font-mono text-cyan-400">11.85 kg Net</span>
+              <p class="text-[11px] text-slate-400">Calculated from load-cell raw ADC</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scale Calibration Diagnostic Info -->
+        <div class="bg-sentinel-950 p-4 rounded-xl border border-slate-800 space-y-2 text-xs font-mono">
+          <div class="flex justify-between text-slate-400">
+            <span>Tare Weight (Empty Shell):</span>
+            <span id="displayTareWeight" class="text-slate-200">15.30 kg</span>
+          </div>
+          <div class="flex justify-between text-slate-400">
+            <span>Net Fuel Content:</span>
+            <span id="displayNetWeight" class="text-cyan-400 font-bold">11.85 kg</span>
+          </div>
+          <div class="flex justify-between pt-2 border-t border-slate-800/80 font-semibold">
+            <span class="text-slate-300">Total Scale Gross Reading:</span>
+            <span id="displayGrossWeight" class="text-emerald-400 font-bold text-sm">27.15 kg</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN (7 cols): Real-Time Scrolling Telemetry + 7-Day Usage Charts -->
+      <div class="lg:col-span-7 space-y-6">
+        
+        <!-- Live Real-Time Telemetry Stream Chart (Rolling 30 Data Points) -->
+        <div class="glass-card rounded-2xl p-6">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+            <div>
+              <h2 class="text-base font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-wave-square text-cyan-400"></i> Real-Time Load Cell Stream
+              </h2>
+              <p class="text-xs text-slate-400">High-frequency weight sample telemetry (last 30 seconds)</p>
+            </div>
+            <div class="flex items-center gap-2 text-xs font-mono">
+              <span class="h-2 w-2 rounded-full bg-cyan-400 animate-ping"></span>
+              <span class="text-slate-400">Live ADC 10Hz</span>
+            </div>
+          </div>
+
+          <div class="h-52 sm:h-56 relative w-full">
+            <canvas id="realtimeStreamChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Historical 7-Day Consumption Trends Chart -->
+        <div class="glass-card rounded-2xl p-6">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+            <div>
+              <h2 class="text-base font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-chart-column text-blue-400"></i> Daily Consumption (Last 7 Days)
+              </h2>
+              <p class="text-xs text-slate-400">Daily burn against domestic benchmark (0.42 kg/day)</p>
+            </div>
+            <div class="text-xs font-mono bg-slate-900 border border-slate-800 px-2.5 py-1 rounded text-cyan-400">
+              Avg: 0.42 kg/day
+            </div>
+          </div>
+
+          <div class="h-52 sm:h-56 relative w-full">
+            <canvas id="weeklyHistoryChart"></canvas>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- HARDWARE TEST RIG & ESP32 SIMULATION CONTROL PANEL -->
+    <div class="glass-card rounded-2xl p-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+        <div>
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-sliders text-cyan-400"></i> Interactive Hardware Test Rig & Telemetry Simulator
+          </h2>
+          <p class="text-xs text-slate-400">Simulate load-cell weight changes, burner activations, and gas leaks without ESP32 powered</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="toggleSimModeBtn" class="bg-cyan-600/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-600 hover:text-white px-3 py-1.5 rounded-lg text-xs font-medium transition">
+            Mode: Simulator Active
+          </button>
+        </div>
+      </div>
+
+      <!-- Controls Slider Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        
+        <!-- Slider 1: Gross Weight -->
+        <div class="bg-sentinel-950 p-4 rounded-xl border border-slate-800">
+          <div class="flex justify-between items-center text-xs mb-1.5">
+            <label for="rigGrossSlider" class="text-slate-300 font-semibold">Simulate Gross Scale Reading</label>
+            <span id="rigGrossValText" class="font-mono text-cyan-400 font-bold">27.15 kg</span>
+          </div>
+          <input id="rigGrossSlider" type="range" min="15.3" max="29.5" step="0.05" value="27.15"
+            class="w-full accent-cyan-500 bg-slate-800 h-2 rounded-lg cursor-pointer">
+          <div class="flex justify-between text-[10px] text-slate-500 mt-1 font-mono">
+            <span id="sliderMinLabel">15.3 kg (Empty)</span>
+            <span id="sliderMidLabel">22.4 kg (Half)</span>
+            <span id="sliderMaxLabel">29.5 kg (Full)</span>
+          </div>
+        </div>
+
+        <!-- Slider 2: Gas Burn Rate -->
+        <div class="bg-sentinel-950 p-4 rounded-xl border border-slate-800">
+          <div class="flex justify-between items-center text-xs mb-1.5">
+            <label for="rigBurnRateSlider" class="text-slate-300 font-semibold">Daily Consumption Rate</label>
+            <span id="rigBurnValText" class="font-mono text-blue-400 font-bold">0.42 kg/day</span>
+          </div>
+          <input id="rigBurnRateSlider" type="range" min="0.10" max="1.50" step="0.02" value="0.42"
+            class="w-full accent-blue-500 bg-slate-800 h-2 rounded-lg cursor-pointer">
+          <div class="flex justify-between text-[10px] text-slate-500 mt-1 font-mono">
+            <span>0.1 kg (Low)</span>
+            <span>0.42 kg (Avg)</span>
+            <span>1.5 kg (High)</span>
+          </div>
+        </div>
+
+        <!-- Slider 3: Gas Leak PPM -->
+        <div class="bg-sentinel-950 p-4 rounded-xl border border-slate-800">
+          <div class="flex justify-between items-center text-xs mb-1.5">
+            <label for="rigPpmSlider" class="text-slate-300 font-semibold">MQ Gas Sensor Level</label>
+            <span id="rigPpmValText" class="font-mono text-emerald-400 font-bold">85 PPM</span>
+          </div>
+          <input id="rigPpmSlider" type="range" min="20" max="800" step="10" value="85"
+            class="w-full accent-emerald-500 bg-slate-800 h-2 rounded-lg cursor-pointer">
+          <div class="flex justify-between text-[10px] text-slate-500 mt-1 font-mono">
+            <span id="sliderPpmMinLabel">20 PPM (Fresh)</span>
+            <span id="sliderPpmMidLabel">350 PPM (Limit)</span>
+            <span id="sliderPpmMaxLabel">800 PPM (Hazard)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Preset Scenario Triggers -->
+      <div class="mt-4 pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="scenarioFullBtn" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition font-medium">
+            <i class="fa-solid fa-bottle-droplet mr-1 text-cyan-400"></i> New Cylinder (14.2kg Net)
+          </button>
+          <button id="scenarioReserveBtn" class="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 px-3 py-1.5 rounded-lg transition font-medium">
+            <i class="fa-solid fa-clock-rotate-left mr-1"></i> Low Reserve (2 Days Left)
+          </button>
+          <button id="scenarioLeakBtn" class="text-xs bg-red-600/20 text-red-400 border border-red-500/30 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded-lg transition font-medium">
+            <i class="fa-solid fa-triangle-exclamation mr-1"></i> Trigger Leak Alarm (650 PPM)
+          </button>
+          <button id="scenarioSafeBtn" class="text-xs bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600 hover:text-white px-3 py-1.5 rounded-lg transition font-medium">
+            <i class="fa-solid fa-shield-halved mr-1"></i> Reset Baseline Safe
+          </button>
+        </div>
+
+        <button id="clearConsoleBtn" class="text-xs text-slate-500 hover:text-slate-300 font-mono transition">
+          <i class="fa-solid fa-trash-can mr-1"></i> Clear Log
+        </button>
+      </div>
+
+      <!-- Live Stream Console Log -->
+      <div class="mt-4">
+        <div id="liveStreamLog" class="bg-sentinel-950 rounded-xl p-3 h-28 overflow-y-auto font-mono text-xs space-y-1 text-slate-400 border border-slate-800">
+          <div class="text-slate-500">[System Boot] LPG Sentinel initialized. Listening on telemetry bus...</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ESP32 ARDUINO C++ CODE MODAL -->
+  <div id="espCodeModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-sentinel-900 border border-slate-700 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-sentinel-950">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-microchip text-cyan-400 text-lg"></i>
+          <h3 class="text-base font-bold text-white">ESP32 Firmware Code (HX711 + MQ-5 Sensor)</h3>
+        </div>
+        <button id="closeEspCodeModalBtn" class="text-slate-400 hover:text-white">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+      <div class="p-5 overflow-y-auto font-mono text-xs text-slate-300 space-y-4">
+        <p class="text-slate-400 font-sans text-xs">
+          Flash this sketch onto your ESP32 board. It reads the HX711 40kg load cell and MQ sensor, calculates net fuel, and streams JSON data to this dashboard over WebSockets or HTTP.
+        </p>
+        
+        <div class="relative">
+          <pre id="cppCodeBlock" class="bg-sentinel-950 p-4 rounded-xl border border-slate-800 text-cyan-300 overflow-x-auto text-[11px] leading-relaxed">
+#include &lt;WiFi.h&gt;
+#include &lt;Firebase_ESP_Client.h&gt; // Install Firebase Arduino Client Library
+#include &lt;HX711.h&gt;
+
+// Wi-Fi Configuration
+const char* ssid     = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+// Firebase Cloud Configuration
+#define API_KEY "YOUR_FIREBASE_API_KEY"
+#define DATABASE_URL "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com"
+
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+
+// Pinout Definitions
+const int LOADCELL_DOUT_PIN = 16;
+const int LOADCELL_SCK_PIN  = 4;
+const int MQ5_ANALOG_PIN    = 34;
+
+HX711 scale;
+
+// Calibration Parameters
+const float TARE_SHELL_KG = 15.30;
+const float CALIBRATION_FACTOR = -22800.0;
+
+unsigned long lastTransmit = 0;
+
+void setup() {
+  Serial.begin(115200);
+  scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
+  scale.set_scale(CALIBRATION_FACTOR);
+  
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi Connected!");
+
+  // Initialize Firebase Cloud Access
+  config.api_key = API_KEY;
+  config.database_url = DATABASE_URL;
+  config.signer.test_mode = true; // Use anonymous access for testing
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+}
+
+void loop() {
+  // Send telemetry every 2000ms to Firebase Cloud
+  if (millis() - lastTransmit &gt; 2000) {
+    lastTransmit = millis();
+
+    float grossWeight = scale.get_units(5);
+    if (grossWeight &lt; 0) grossWeight = 0;
+    
+    int rawMq = analogRead(MQ5_ANALOG_PIN);
+    int ppm = map(rawMq, 200, 3500, 40, 800);
+
+    // Upload live data to Firebase Realtime Database
+    Firebase.RTDB.setFloat(&fbdo, "/lpg_telemetry/gross_weight", grossWeight);
+    Firebase.RTDB.setInt(&fbdo, "/lpg_telemetry/ppm", ppm);
+    Firebase.RTDB.setInt(&fbdo, "/lpg_telemetry/rssi", WiFi.RSSI());
+
+    Serial.println("Telemetry dispatched to Firebase Cloud!");
+  }
+}
+          </pre>
+          <button id="copyCodeBtn" class="absolute top-2 right-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1 rounded text-xs transition">
+            <i class="fa-solid fa-copy mr-1"></i> Copy
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-slate-800/80 bg-sentinel-950 py-4 text-center text-xs text-slate-500 font-mono">
+    <p>LPG Sentinel &bull; Smart IoT Resource Engine &bull; DTAI Real-Time Project 2026</p>
+  </footer>
+
+  <!-- CORE JAVASCRIPT APPLICATION LOGIC -->
+  <script>
+    // System Default Configuration
+    let config = {
+      tareWeight: 15.30,        // Standard empty cylinder weight
+      nominalCapacity: 14.20,   // Full net gas weight
+      calibFactor: -22800,
+      leakPpmThreshold: 350,
+      avgDailyBurn: 0.42        // kg per day
+    };
+
+    // Live Telemetry State
+    let state = {
+      grossWeight: 27.15,
+      netWeight: 11.85,
+      mqPpm: 85,
+      rssi: -62,
+      latency: 12,
+      isSimulated: true,
+      buzzerMuted: false,
+      audioContext: null
+    };
+
+    // 7-day historical consumption array (kg)
+    const history7Days = [0.44, 0.39, 0.48, 0.41, 0.43, 0.38, 0.42];
+
+    // Chart.js instances
+    let realtimeChart = null;
+    let historyChart = null;
+    let ws = null;
+    let buzzerInterval = null;
+
+    // DOM References
+    const cardNetKg = document.getElementById('cardNetKg');
+    const cardGrossKg = document.getElementById('cardGrossKg');
+    const cardPercentVal = document.getElementById('cardPercentVal');
+    const circleProgressPath = document.getElementById('circleProgressPath');
+    const radialPercentText = document.getElementById('radialPercentText');
+    const levelHealthBadge = document.getElementById('levelHealthBadge');
+    const cardDaysRemaining = document.getElementById('cardDaysRemaining');
+    const cardRefillDate = document.getElementById('cardRefillDate');
+    const refillRecommendation = document.getElementById('refillRecommendation');
+    const cardBurnRate = document.getElementById('cardBurnRate');
+    const cardMqPpm = document.getElementById('cardMqPpm');
+    const cardMqBadge = document.getElementById('cardMqBadge');
+    const ppmProgressBar = document.getElementById('ppmProgressBar');
+    const leakAlarmBanner = document.getElementById('leakAlarmBanner');
+    const svgLiquidFill = document.getElementById('svgLiquidFill');
+    const svgMeniscusLine = document.getElementById('svgMeniscusLine');
+    const svgNetFloatingText = document.getElementById('svgNetFloatingText');
+    const displayTareWeight = document.getElementById('displayTareWeight');
+    const displayNetWeight = document.getElementById('displayNetWeight');
+    const displayGrossWeight = document.getElementById('displayGrossWeight');
+    const liveStreamLog = document.getElementById('liveStreamLog');
+    const hardwareModeBadge = document.getElementById('hardwareModeBadge');
+    const latencyDisplay = document.getElementById('latencyDisplay');
+    const wifiRssiVal = document.getElementById('wifiRssiVal');
+
+    // Controls DOM
+    const rigGrossSlider = document.getElementById('rigGrossSlider');
+    const rigBurnRateSlider = document.getElementById('rigBurnRateSlider');
+    const rigPpmSlider = document.getElementById('rigPpmSlider');
+    const rigGrossValText = document.getElementById('rigGrossValText');
+    const rigBurnValText = document.getElementById('rigBurnValText');
+    const rigPpmValText = document.getElementById('rigPpmValText');
+
+    // Drawer Inputs
+    const tareWeightInput = document.getElementById('tareWeightInput');
+    const nominalCapacityInput = document.getElementById('nominalCapacityInput');
+    const calibFactorInput = document.getElementById('calibFactorInput');
+    const leakThresholdInput = document.getElementById('leakThresholdInput');
+
+    // Logging helper
+    function appendLog(msg, type = 'normal') {
+      const line = document.createElement('div');
+      const timeStr = new Date().toLocaleTimeString();
+      let color = 'text-slate-400';
+      if (type === 'warn') color = 'text-amber-400 font-semibold';
+      if (type === 'danger') color = 'text-red-400 font-bold animate-pulse';
+      if (type === 'success') color = 'text-emerald-400 font-semibold';
+
+      line.className = color;
+      line.textContent = `[${timeStr}] ${msg}`;
+      liveStreamLog.appendChild(line);
+      liveStreamLog.scrollTop = liveStreamLog.scrollHeight;
+    }
+
+    // Web Audio Synthesizer Beep (No external audio file needed)
+    function playAlarmTone() {
+      if (state.buzzerMuted) return;
+      try {
+        if (!state.audioContext) {
+          state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (state.audioContext.state === 'suspended') {
+          state.audioContext.resume();
+        }
+        const osc = state.audioContext.createOscillator();
+        const gain = state.audioContext.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(880, state.audioContext.currentTime); // 880Hz alert tone
+        gain.gain.setValueAtTime(0.15, state.audioContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, state.audioContext.currentTime + 0.3);
+        osc.connect(gain);
+        gain.connect(state.audioContext.destination);
+        osc.start();
+        osc.stop(state.audioContext.currentTime + 0.35);
+      } catch (e) {
+        console.warn('Audio tone error:', e);
+      }
+    }
+
+    // Initialize Charts
+    function initCharts() {
+      // 1. Real-Time Rolling Chart
+      const streamCtx = document.getElementById('realtimeStreamChart').getContext('2d');
+      const initialLabels = Array.from({ length: 30 }, (_, i) => `-${30 - i}s`);
+      const initialStreamData = Array.from({ length: 30 }, () => state.netWeight);
+
+      realtimeChart = new Chart(streamCtx, {
+        type: 'line',
+        data: {
+          labels: initialLabels,
+          datasets: [{
+            label: 'Net Gas (kg)',
+            data: initialStreamData,
+            borderColor: '#06b6d4',
+            backgroundColor: 'rgba(6, 182, 212, 0.08)',
+            borderWidth: 2,
+            tension: 0.35,
+            fill: true,
+            pointRadius: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { display: false },
+            y: {
+              min: 0,
+              max: 15,
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 10 } }
+            }
+          }
+        }
+      });
+
+      // 2. 7-Day History Chart
+      const historyCtx = document.getElementById('weeklyHistoryChart').getContext('2d');
+      historyChart = new Chart(historyCtx, {
+        type: 'bar',
+        data: {
+          labels: ['6d ago', '5d ago', '4d ago', '3d ago', '2d ago', 'Yesterday', 'Today'],
+          datasets: [{
+            label: 'Burned (kg)',
+            data: history7Days,
+            backgroundColor: 'rgba(59, 130, 246, 0.45)',
+            borderColor: '#3b82f6',
+            borderWidth: 1.5,
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { color: '#64748b', font: { family: 'Plus Jakarta Sans', size: 11 } }
+            },
+            y: {
+              beginAtZero: true,
+              max: 0.8,
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 10 } }
+            }
+          }
+        }
+      });
+    }
+
+    // Refresh UI Dashboard & Physical Logic
+    function refreshDashboard() {
+      // 1. Calculate Net and Percentage
+      const net = Math.max(0, Math.min(config.nominalCapacity, state.grossWeight - config.tareWeight));
+      state.netWeight = parseFloat(net.toFixed(2));
+      const percentage = Math.max(0, Math.min(100, (net / config.nominalCapacity) * 100));
+
+      // 2. Card 1 Display
+      cardNetKg.textContent = net.toFixed(2);
+      cardGrossKg.textContent = `${state.grossWeight.toFixed(2)} kg`;
+      cardPercentVal.textContent = `${percentage.toFixed(1)}% Full`;
+      radialPercentText.textContent = `${Math.round(percentage)}%`;
+
+      // SVG radial progress stroke-dasharray (circumference = 100)
+      circleProgressPath.setAttribute('stroke-dasharray', `${percentage.toFixed(1)}, 100`);
+      if (percentage <= 15) {
+        circleProgressPath.setAttribute('class', 'text-red-500 transition-all duration-500');
+      } else if (percentage <= 35) {
+        circleProgressPath.setAttribute('class', 'text-amber-400 transition-all duration-500');
+      } else {
+        circleProgressPath.setAttribute('class', 'text-cyan-400 transition-all duration-500');
+      }
+
+      // Health badge
+      if (percentage > 35) {
+        levelHealthBadge.className = 'text-xs px-2.5 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
+        levelHealthBadge.textContent = 'Normal Level';
+      } else if (percentage > 12) {
+        levelHealthBadge.className = 'text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30';
+        levelHealthBadge.textContent = 'Reserve Warning';
+      } else {
+        levelHealthBadge.className = 'text-xs px-2.5 py-0.5 rounded-full font-bold bg-red-500/20 text-red-400 border border-red-500/50 animate-pulse';
+        levelHealthBadge.textContent = 'Refill Critical!';
+      }
+
+      // 3. Card 2: Refill Forecasting
+      const daysLeft = config.avgDailyBurn > 0 ? Math.floor(net / config.avgDailyBurn) : 0;
+      cardDaysRemaining.textContent = daysLeft;
+      
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() + daysLeft);
+      cardRefillDate.textContent = targetDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+      if (daysLeft <= 3) {
+        refillRecommendation.textContent = 'Book refill today to prevent outage!';
+        refillRecommendation.className = 'text-xs text-red-400 font-semibold mt-1';
+      } else if (daysLeft <= 7) {
+        refillRecommendation.textContent = 'Upcoming booking window recommended';
+        refillRecommendation.className = 'text-xs text-amber-400 mt-1';
+      } else {
+        refillRecommendation.textContent = `Sufficient reserve for ~${Math.ceil(daysLeft / 7)} weeks`;
+        refillRecommendation.className = 'text-xs text-slate-400 mt-1';
+      }
+
+      // 4. Card 3: Burn Rate
+      cardBurnRate.textContent = config.avgDailyBurn.toFixed(2);
+
+      // 5. Card 4: Gas Leak MQ Sensor
+      cardMqPpm.textContent = state.mqPpm;
+      const ppmPercent = Math.min(100, (state.mqPpm / 800) * 100);
+      ppmProgressBar.style.width = `${ppmPercent}%`;
+
+      if (state.mqPpm >= config.leakPpmThreshold) {
+        cardMqBadge.className = 'text-xs px-2.5 py-0.5 rounded-full font-bold bg-red-600/30 text-red-400 border border-red-500/60 animate-pulse';
+        cardMqBadge.textContent = 'LEAK HAZARD!';
+        ppmProgressBar.className = 'bg-red-500 h-full rounded-full transition-all duration-300';
+        leakAlarmBanner.classList.remove('hidden');
+
+        if (!buzzerInterval && !state.buzzerMuted) {
+          buzzerInterval = setInterval(playAlarmTone, 1000);
+          playAlarmTone();
+        }
+      } else if (state.mqPpm >= 180) {
+        cardMqBadge.className = 'text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30';
+        cardMqBadge.textContent = 'WARN (TRACE)';
+        ppmProgressBar.className = 'bg-amber-400 h-full rounded-full transition-all duration-300';
+        leakAlarmBanner.classList.add('hidden');
+        if (buzzerInterval) { clearInterval(buzzerInterval); buzzerInterval = null; }
+      } else {
+        cardMqBadge.className = 'text-xs px-2.5 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
+        cardMqBadge.textContent = 'SAFE';
+        ppmProgressBar.className = 'bg-emerald-400 h-full rounded-full transition-all duration-300';
+        leakAlarmBanner.classList.add('hidden');
+        if (buzzerInterval) { clearInterval(buzzerInterval); buzzerInterval = null; }
+      }
+
+      // 6. Cylinder SVG Dynamic Cutaway Fill
+      // SVG chamber: y=65 to 255 (max height = 190)
+      const maxSvgH = 190;
+      const svgHeight = (percentage / 100) * maxSvgH;
+      const svgY = 255 - svgHeight;
+
+      svgLiquidFill.setAttribute('height', svgHeight);
+      svgLiquidFill.setAttribute('y', svgY);
+      svgMeniscusLine.setAttribute('d', `M 36 ${svgY} Q 75 ${svgY - 4} 110 ${svgY} T 184 ${svgY}`);
+
+      svgNetFloatingText.textContent = `${net.toFixed(2)} kg Net`;
+      displayTareWeight.textContent = `${config.tareWeight.toFixed(2)} kg`;
+      displayNetWeight.textContent = `${net.toFixed(2)} kg`;
+      displayGrossWeight.textContent = `${state.grossWeight.toFixed(2)} kg`;
+    }
+
+    // Feed new telemetry tick to rolling chart
+    function pushRealtimeChartData(netVal) {
+      if (!realtimeChart) return;
+      const data = realtimeChart.data.datasets[0].data;
+      data.shift();
+      data.push(netVal);
+      realtimeChart.update('none');
+    }
+
+    // Simulation Slider Events
+    rigGrossSlider.addEventListener('input', (e) => {
+      state.grossWeight = parseFloat(e.target.value);
+      rigGrossValText.textContent = `${state.grossWeight.toFixed(2)} kg`;
+      refreshDashboard();
+      pushRealtimeChartData(state.netWeight);
+    });
+
+    rigBurnRateSlider.addEventListener('input', (e) => {
+      config.avgDailyBurn = parseFloat(e.target.value);
+      rigBurnValText.textContent = `${config.avgDailyBurn.toFixed(2)} kg/day`;
+      refreshDashboard();
+    });
+
+    rigPpmSlider.addEventListener('input', (e) => {
+      state.mqPpm = parseInt(e.target.value, 10);
+      rigPpmValText.textContent = `${state.mqPpm} PPM`;
+      if (state.mqPpm >= config.leakPpmThreshold) {
+        appendLog(`Sensor gas reading exceeded safety threshold: ${state.mqPpm} PPM`, 'danger');
+      }
+      refreshDashboard();
+    });
+
+    // Preset Scenario Actions
+    document.getElementById('scenarioFullBtn').addEventListener('click', () => {
+      state.grossWeight = config.tareWeight + config.nominalCapacity;
+      rigGrossSlider.value = state.grossWeight.toFixed(2);
+      rigGrossValText.textContent = `${state.grossWeight.toFixed(2)} kg`;
+      appendLog("Preset applied: Brand new full cylinder seated (14.2kg net).", 'success');
+      refreshDashboard();
+      pushRealtimeChartData(state.netWeight);
+    });
+
+    document.getElementById('scenarioReserveBtn').addEventListener('click', () => {
+      state.grossWeight = config.tareWeight + 0.84; // ~2 days left
+      rigGrossSlider.value = state.grossWeight.toFixed(2);
+      rigGrossValText.textContent = `${state.grossWeight.toFixed(2)} kg`;
+      appendLog("Preset applied: Reserve gas alert condition (2 days remaining).", 'warn');
+      refreshDashboard();
+      pushRealtimeChartData(state.netWeight);
+    });
+
+    document.getElementById('scenarioLeakBtn').addEventListener('click', () => {
+      state.mqPpm = 650;
+      rigPpmSlider.value = 650;
+      rigPpmValText.textContent = "650 PPM";
+      state.buzzerMuted = false;
+      appendLog("Preset applied: Injected sudden gas leakage event (650 PPM).", 'danger');
+      refreshDashboard();
+    });
+
+    document.getElementById('scenarioSafeBtn').addEventListener('click', () => {
+      state.mqPpm = 85;
+      rigPpmSlider.value = 85;
+      rigPpmValText.textContent = "85 PPM";
+      state.buzzerMuted = false;
+      appendLog("Preset applied: Safe ambient air quality restored.", 'success');
+      refreshDashboard();
+    });
+
+    // Calibration Drawer & Apply settings
+    const settingsDrawer = document.getElementById('settingsDrawer');
+    document.getElementById('toggleSettingsBtn').addEventListener('click', () => {
+      settingsDrawer.classList.toggle('hidden');
+    });
+    document.getElementById('closeSettingsBtn').addEventListener('click', () => {
+      settingsDrawer.classList.add('hidden');
+    });
+
+    document.getElementById('saveSettingsBtn').addEventListener('click', () => {
+      config.tareWeight = parseFloat(tareWeightInput.value) || 15.30;
+      config.nominalCapacity = parseFloat(nominalCapacityInput.value) || 14.20;
+      config.calibFactor = parseFloat(calibFactorInput.value) || -22800;
+      config.leakPpmThreshold = parseInt(leakThresholdInput.value, 10) || 350;
+
+      // Ensure current state stays within new calibration boundaries
+      const maxGross = config.tareWeight + config.nominalCapacity;
+      if (state.grossWeight < config.tareWeight) state.grossWeight = config.tareWeight;
+      if (state.grossWeight > maxGross) state.grossWeight = maxGross;
+
+      // Update slider constraints and pointer value
+      rigGrossSlider.min = config.tareWeight;
+      rigGrossSlider.max = maxGross;
+      rigGrossSlider.value = state.grossWeight;
+      rigGrossValText.textContent = `${state.grossWeight.toFixed(2)} kg`;
+
+      // Dynamically update UI labels below the slider
+      const midGross = config.tareWeight + (config.nominalCapacity / 2);
+      const sliderMinLabel = document.getElementById('sliderMinLabel');
+      const sliderMidLabel = document.getElementById('sliderMidLabel');
+      const sliderMaxLabel = document.getElementById('sliderMaxLabel');
+      if (sliderMinLabel) sliderMinLabel.textContent = `${config.tareWeight.toFixed(1)} kg (Empty)`;
+      if (sliderMidLabel) sliderMidLabel.textContent = `${midGross.toFixed(1)} kg (Half)`;
+      if (sliderMaxLabel) sliderMaxLabel.textContent = `${maxGross.toFixed(1)} kg (Full)`;
+
+      // Update PPM UI limits dynamically
+      const sliderPpmMidLabel = document.getElementById('sliderPpmMidLabel');
+      const cardMqAlarmLimit = document.getElementById('cardMqAlarmLimit');
+      
+      if (sliderPpmMidLabel) sliderPpmMidLabel.textContent = `${config.leakPpmThreshold} PPM (Limit)`;
+      if (cardMqAlarmLimit) cardMqAlarmLimit.textContent = `${config.leakPpmThreshold} PPM`;
+      
+      // Expand PPM slider max dynamically if limit is set very high
+      if (config.leakPpmThreshold > 700) {
+          rigPpmSlider.max = config.leakPpmThreshold + 200;
+          const sliderPpmMaxLabel = document.getElementById('sliderPpmMaxLabel');
+          if (sliderPpmMaxLabel) sliderPpmMaxLabel.textContent = `${rigPpmSlider.max} PPM (Hazard)`;
+      }
+
+      settingsDrawer.classList.add('hidden');
+      appendLog(`Hardware configuration applied: Tare=${config.tareWeight}kg, Cap=${config.nominalCapacity}kg, MQ_Limit=${config.leakPpmThreshold}PPM`, 'success');
+      refreshDashboard();
+    });
+
+    document.getElementById('applyCalibBtn').addEventListener('click', () => {
+      config.calibFactor = parseFloat(calibFactorInput.value) || -22800;
+      appendLog(`HX711 calibration slope set to ${config.calibFactor}`);
+    });
+
+    // Audio Mute and Test
+    document.getElementById('muteAudioBuzzerBtn').addEventListener('click', () => {
+      state.buzzerMuted = true;
+      if (buzzerInterval) {
+        clearInterval(buzzerInterval);
+        buzzerInterval = null;
+      }
+      appendLog("Emergency audible buzzer silenced by operator.", 'warn');
+    });
+
+    document.getElementById('toggleAudioTestBtn').addEventListener('click', () => {
+      state.buzzerMuted = false;
+      playAlarmTone();
+      appendLog("Test alarm tone fired via Web Audio synthesizer.");
+    });
+
+    // Code Modal
+    const espCodeModal = document.getElementById('espCodeModal');
+    document.getElementById('openEspCodeModalBtn').addEventListener('click', () => {
+      espCodeModal.classList.remove('hidden');
+    });
+    document.getElementById('closeEspCodeModalBtn').addEventListener('click', () => {
+      espCodeModal.classList.add('hidden');
+    });
+    document.getElementById('copyCodeBtn').addEventListener('click', () => {
+      const text = document.getElementById('cppCodeBlock').innerText;
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      appendLog("Copied ESP32 firmware sketch to clipboard!", 'success');
+    });
+
+    document.getElementById('clearConsoleBtn').addEventListener('click', () => {
+      liveStreamLog.innerHTML = '';
+      appendLog("Console logs flushed.");
+    });
+
+    // WebSocket Real-time Connectivity
+    const wsConnectBtn = document.getElementById('wsConnectBtn');
+    const wsUrlInput = document.getElementById('wsUrlInput');
+
+    // FIREBASE CLOUD VARIABLES
+    let firebaseApp = null;
+    let dbRef = null;
+
+    function connectLiveWebSocket() {
+      const url = wsUrlInput.value.trim();
+      
+      // FIREBASE CLOUD MODE
+      if (url === 'firebase-cloud') {
+        appendLog(`Initializing Global Cloud Connection (Firebase)...`);
+        try {
+          if (!firebaseApp) {
+             firebaseApp = firebase.initializeApp({
+                // MAWA: IKKADA NEE FIREBASE DETAILS PASTE CHEY! ⚠️
+                apiKey: "AIzaSyC3e5RiJMv58Ut2scS6KqiixBg0sdyKsHA",
+                databaseURL: "https://smart-lpg-system-9b97c-default-rtdb.firebaseio.com",
+                projectId: "smart-lpg-system-9b97c"
+             });
+          }
+          
+          const db = firebase.database();
+          dbRef = db.ref('lpg_telemetry');
+          
+          state.isSimulated = false;
+          state.latency = Math.floor(Math.random() * 20) + 40; // Cloud latency approx
+          latencyDisplay.textContent = `${state.latency} ms`;
+          hardwareModeBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 font-medium';
+          hardwareModeBadge.innerHTML = '<i class="fa-solid fa-cloud mr-1"></i>Cloud Linked';
+          wsConnectBtn.textContent = 'Disconnect';
+          wsConnectBtn.className = 'ml-1 bg-red-600 hover:bg-red-500 text-white font-medium px-2.5 py-1 rounded text-[11px] transition';
+          appendLog(`Connected to Firebase Cloud! Listening for ESP32...`, 'success');
+
+          dbRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+              if (data.gross_weight !== undefined) {
+                state.grossWeight = parseFloat(data.gross_weight);
+                rigGrossSlider.value = state.grossWeight;
+                rigGrossValText.textContent = `${state.grossWeight.toFixed(2)} kg`;
+              }
+              if (data.ppm !== undefined) {
+                state.mqPpm = parseInt(data.ppm, 10);
+                rigPpmSlider.value = state.mqPpm;
+                rigPpmValText.textContent = `${state.mqPpm} PPM`;
+              }
+              if (data.rssi !== undefined) {
+                state.rssi = data.rssi;
+                wifiRssiVal.textContent = `${state.rssi} dBm`;
+              }
+              refreshDashboard();
+              pushRealtimeChartData(state.netWeight);
+            }
+          });
+        } catch (err) {
+          appendLog(`Firebase error: Please add API keys! (${err.message})`, 'danger');
+        }
+        return;
+      }
+
+      // LOCAL WEBSOCKET FALLBACK
+      appendLog(`Opening local connection to ${url}...`);
+      
+      try {
+        ws = new WebSocket(url);
+        const startTime = Date.now();
+
+        ws.onopen = () => {
+          state.isSimulated = false;
+          state.latency = Date.now() - startTime;
+          latencyDisplay.textContent = `${state.latency} ms`;
+          hardwareModeBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium';
+          hardwareModeBadge.innerHTML = '<i class="fa-solid fa-circle-check mr-1"></i>ESP32 Online';
+          wsConnectBtn.textContent = 'Disconnect';
+          wsConnectBtn.className = 'ml-1 bg-red-600 hover:bg-red-500 text-white font-medium px-2.5 py-1 rounded text-[11px] transition';
+          appendLog(`Connected to live ESP32 telemetry server at ${url}!`, 'success');
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.gross_weight !== undefined) {
+              state.grossWeight = parseFloat(payload.gross_weight);
+              rigGrossSlider.value = state.grossWeight;
+              rigGrossValText.textContent = `${state.grossWeight.toFixed(2)} kg`;
+            }
+            if (payload.ppm !== undefined) {
+              state.mqPpm = parseInt(payload.ppm, 10);
+              rigPpmSlider.value = state.mqPpm;
+              rigPpmValText.textContent = `${state.mqPpm} PPM`;
+            }
+            if (payload.rssi !== undefined) {
+              state.rssi = payload.rssi;
+              wifiRssiVal.textContent = `${state.rssi} dBm`;
+            }
+
+            refreshDashboard();
+            pushRealtimeChartData(state.netWeight);
+          } catch (err) {
+            console.error('Payload parse err:', err);
+          }
+        };
+
+        ws.onerror = () => {
+          appendLog("WebSocket connection error. Verify ESP32 IP & port.", 'warn');
+        };
+
+        ws.onclose = () => {
+          state.isSimulated = true;
+          hardwareModeBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-medium';
+          hardwareModeBadge.innerHTML = '<i class="fa-solid fa-vial mr-1"></i>Mock Simulator';
+          wsConnectBtn.textContent = 'Connect';
+          wsConnectBtn.className = 'ml-1 bg-cyan-600 hover:bg-cyan-500 text-white font-medium px-2.5 py-1 rounded text-[11px] transition';
+          appendLog("WebSocket link disconnected. Reverted to built-in simulation engine.", 'warn');
+        };
+
+      } catch (err) {
+        appendLog(`Failed to connect to ${url}: ${err.message}`, 'warn');
+      }
+    }
+
+    wsConnectBtn.addEventListener('click', () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      } else if (dbRef) {
+        // Disconnect Firebase Cloud
+        dbRef.off();
+        dbRef = null;
+        state.isSimulated = true;
+        hardwareModeBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-medium';
+        hardwareModeBadge.innerHTML = '<i class="fa-solid fa-vial mr-1"></i>Mock Simulator';
+        wsConnectBtn.textContent = 'Connect';
+        wsConnectBtn.className = 'ml-1 bg-cyan-600 hover:bg-cyan-500 text-white font-medium px-2.5 py-1 rounded text-[11px] transition';
+        appendLog("Cloud link disconnected. Reverted to built-in simulation engine.", 'warn');
+      } else {
+        connectLiveWebSocket();
+      }
+    });
+
+    document.getElementById('toggleSimModeBtn').addEventListener('click', () => {
+      if (!state.isSimulated) {
+        if (ws) ws.close();
+        if (dbRef) {
+          dbRef.off(); 
+          dbRef = null;
+          wsConnectBtn.click(); // Quick trigger to reset UI buttons
+        }
+      } else {
+        appendLog("Simulator mode is currently active.");
+      }
+    });
+
+    // Background Telemetry Pulse (simulates subtle sensor ADC fluctuations)
+    setInterval(() => {
+      if (state.isSimulated) {
+        // Natural jitter of +/- 0.02 kg on the scale
+        const noise = (Math.random() - 0.5) * 0.04;
+        state.grossWeight = Math.max(config.tareWeight, Math.min(config.tareWeight + config.nominalCapacity, state.grossWeight + noise));
+        
+        // Minor PPM air fluctuation if below threshold
+        if (state.mqPpm < config.leakPpmThreshold) {
+          const ppmNoise = Math.floor((Math.random() - 0.5) * 4);
+          state.mqPpm = Math.max(30, state.mqPpm + ppmNoise);
+        }
+
+        rigGrossSlider.value = state.grossWeight.toFixed(2);
+        rigGrossValText.textContent = `${state.grossWeight.toFixed(2)} kg`;
+        rigPpmSlider.value = state.mqPpm;
+        rigPpmValText.textContent = `${state.mqPpm} PPM`;
+
+        refreshDashboard();
+        pushRealtimeChartData(state.netWeight);
+      }
+    }, 1000);
+
+    // Initial Start
+    window.addEventListener('DOMContentLoaded', () => {
+      initCharts();
+      refreshDashboard();
+      appendLog("Cylinder Telemetry Engine online. Domestic tare reference: 15.3kg, Max payload: 14.2kg.");
+    });
+  </script>
+</body>
+</html>
